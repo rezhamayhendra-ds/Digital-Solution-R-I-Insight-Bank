@@ -4,12 +4,12 @@ import { generateJournalContent } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 import { 
   ResearchJournal, JournalContent, 
-  ContentFormat, ResearchMethod, AuthorName, User, UserRole 
+  ContentFormat, ResearchMethod, AuthorName, User, UserRole, Comment 
 } from './types';
 import { 
   LayoutDashboard, PlusCircle, FileText, Download, 
   Loader2, X, ShieldCheck, Globe, LogOut, Edit3, Save, AlertCircle, PieChart as PieChartIcon, BarChart3, TrendingUp, Calendar, Filter,
-  User as UserIcon, IdCard, Briefcase
+  User as UserIcon, IdCard, Briefcase, MessageSquare, Send
 } from 'lucide-react';
 
 const AUTHORS: AuthorName[] = [
@@ -44,6 +44,8 @@ const App: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', employeeId: '', department: '' });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
 
   useEffect(() => {
     const initApp = async () => {
@@ -257,6 +259,7 @@ const App: React.FC = () => {
           status: 'Completed',
           english: content.english,
           indonesian: content.indonesian,
+          comments: [],
           created_at: new Date().toISOString()
         }])
         .select().single();
@@ -274,6 +277,52 @@ const App: React.FC = () => {
       console.error("Research creation error:", error);
       alert(`Process Failed: ${error.message}`);
       setIsGenerating(false);
+    }
+  };
+
+  const handlePostComment = async (journalId: string) => {
+    if (!currentUser || !commentText.trim()) return;
+    setIsPostingComment(true);
+
+    const newComment: Comment = {
+      id: Math.random().toString(36).substring(2, 11),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      text: commentText,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      const targetJournal = journals.find(j => j.id === journalId);
+      if (!targetJournal) return;
+
+      const updatedComments = [...(targetJournal.comments || []), newComment];
+
+      const { error } = await supabase
+        .from('journals')
+        .update({ comments: updatedComments })
+        .eq('id', journalId);
+
+      if (error) throw error;
+
+      // Local state update
+      const updatedJournals = journals.map(j => 
+        j.id === journalId ? { ...j, comments: updatedComments } : j
+      );
+      setJournals(updatedJournals);
+      
+      if (selectedJournal && selectedJournal.journal.id === journalId) {
+        setSelectedJournal({
+          ...selectedJournal,
+          journal: { ...selectedJournal.journal, comments: updatedComments }
+        });
+      }
+      
+      setCommentText('');
+    } catch (err: any) {
+      alert("Comment failed: " + err.message);
+    } finally {
+      setIsPostingComment(false);
     }
   };
 
@@ -448,7 +497,7 @@ const App: React.FC = () => {
 
       <main className="flex-1 lg:ml-72 min-h-screen">
         <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-5 flex justify-between items-center sticky top-0 z-30">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest"><Globe size={14} className="text-blue-600" /> Secure Protocol Link</div>
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest"><Globe size={14} className="text-blue-600" /> Digital Solution Department - Pancaran Group Inland </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-bold text-slate-900">{currentUser.fullName}</p>
@@ -706,7 +755,14 @@ const App: React.FC = () => {
                     <span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${j.type === 'Business Forecast' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
                       {j.type}
                     </span>
-                    <p className="text-[9px] font-black text-slate-300 uppercase">{new Date(j.createdAt || Date.now()).toLocaleDateString()}</p>
+                    <div className="flex items-center gap-2">
+                       {j.comments && j.comments.length > 0 && (
+                        <span className="flex items-center gap-1 text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                          <MessageSquare size={10} /> {j.comments.length}
+                        </span>
+                       )}
+                       <p className="text-[9px] font-black text-slate-300 uppercase">{new Date(j.createdAt || Date.now()).toLocaleDateString()}</p>
+                    </div>
                    </div>
                   <h4 className="font-serif-journal text-xl font-bold text-slate-900 mb-4 flex-1 leading-snug">{j.topic}</h4>
                   <div className="pt-6 border-t border-slate-50 mt-auto">
@@ -798,7 +854,8 @@ const App: React.FC = () => {
       {selectedJournal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" onClick={() => setSelectedJournal(null)}></div>
-          <div className="relative bg-white w-full max-w-5xl h-[92vh] rounded-[48px] overflow-hidden flex flex-col animate-in zoom-in-95 shadow-2xl">
+          <div className="relative bg-white w-full max-w-6xl h-[92vh] rounded-[48px] overflow-hidden flex flex-col animate-in zoom-in-95 shadow-2xl">
+            {/* Modal Header */}
             <div className="p-8 border-b flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
               <div className="flex flex-col">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Research Protocol Preview</span>
@@ -806,79 +863,147 @@ const App: React.FC = () => {
                   <Globe size={12} /> {selectedJournal.lang === 'english' ? 'Global Version (EN)' : 'Local Version (ID)'}
                 </span>
               </div>
-              <button onClick={() => setSelectedJournal(null)} className="p-3 hover:bg-slate-100 rounded-full transition-colors"><X size={28} /></button>
+              <div className="flex items-center gap-4">
+                <button onClick={() => createPDF(selectedJournal.journal, selectedJournal.lang).save(`${selectedJournal.journal.topic}.pdf`)} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[9px] flex items-center gap-2 hover:bg-black transition-all shadow-lg active:scale-95">
+                  <Download size={14} /> Export PDF
+                </button>
+                <button onClick={() => setSelectedJournal(null)} className="p-3 hover:bg-slate-100 rounded-full transition-colors"><X size={28} /></button>
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-12 lg:p-20 bg-white">
-              <div className="max-w-4xl mx-auto space-y-16">
-                <div className="flex justify-between items-start border-b border-slate-100 pb-6">
-                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Digital Solution R&I Bank - Research Intelligence Unit</p>
-                   <p className="text-[10px] text-slate-400 font-bold">{new Date(selectedJournal.journal.createdAt || Date.now()).toLocaleDateString()}</p>
-                </div>
 
-                <div className="space-y-6">
-                  <h1 className="text-5xl font-serif-journal font-bold text-slate-900 leading-tight">{selectedJournal.journal.topic}</h1>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-4 py-2 rounded-full border border-blue-100">
-                      {selectedJournal.journal.format}
-                    </span>
-                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-4 py-2 rounded-full border border-amber-100">
-                      {selectedJournal.journal.type}
-                    </span>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      Method: {selectedJournal.journal.method}
-                    </span>
+            {/* Modal Content - Side-by-Side Layout */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left Column: Journal Document */}
+              <div className="flex-1 overflow-y-auto p-12 lg:p-20 bg-white custom-scrollbar border-r border-slate-100">
+                <div className="max-w-4xl mx-auto space-y-16">
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-6">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-left">Digital Solution R&I Bank - Research Intelligence Unit</p>
+                    <p className="text-[10px] text-slate-400 font-bold text-right">{new Date(selectedJournal.journal.createdAt || Date.now()).toLocaleDateString()}</p>
                   </div>
-                </div>
 
-                <div className="space-y-12 prose prose-slate max-w-none text-justify">
-                  <div className="bg-slate-50 border-l-[6px] border-blue-500 p-10 rounded-r-[40px] shadow-inner">
-                    <h5 className="font-black text-[10px] uppercase tracking-[0.2em] text-blue-600 mb-6">Abstract Formulation</h5>
-                    <p className="italic text-slate-700 leading-relaxed font-serif-journal text-lg">"{selectedJournal.journal[selectedJournal.lang].abstract}"</p>
+                  <div className="space-y-6">
+                    <h1 className="text-4xl lg:text-5xl font-serif-journal font-bold text-slate-900 leading-tight text-left">{selectedJournal.journal.topic}</h1>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-4 py-2 rounded-full border border-blue-100">
+                        {selectedJournal.journal.format}
+                      </span>
+                      <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-4 py-2 rounded-full border border-amber-100">
+                        {selectedJournal.journal.type}
+                      </span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Method: {selectedJournal.journal.method}
+                      </span>
+                    </div>
                   </div>
-                  
-                  <section className="space-y-6">
-                    <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">I. Introduction</h5>
-                    <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].introduction}</p>
-                  </section>
-                  
-                  <section className="space-y-6">
-                    <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">II. Research Methodology</h5>
-                    <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].methodology}</p>
-                  </section>
-                  
-                  <section className="space-y-6">
-                    <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">III. Empirical Analysis & Results</h5>
-                    <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].results}</p>
-                  </section>
-                  
-                  <section className="space-y-6">
-                    <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">IV. Strategic Conclusion</h5>
-                    <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].conclusion}</p>
-                  </section>
 
-                  {selectedJournal.journal[selectedJournal.lang].references && (
-                    <section className="space-y-8 pt-10">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 border-b-2 border-slate-900 pb-4">References</h5>
-                      <ul className="list-none pl-0 space-y-4 text-sm text-slate-600 font-medium">
-                        {selectedJournal.journal[selectedJournal.lang].references.map((ref, i) => (
-                          <li key={i} className="flex gap-4 p-4 hover:bg-slate-50 rounded-2xl transition-colors">
-                            <span className="text-blue-500 font-black">[{i+1}]</span> 
-                            <span>{ref}</span>
-                          </li>
-                        ))}
-                      </ul>
+                  <div className="space-y-12 prose prose-slate max-w-none text-justify">
+                    <div className="bg-slate-50 border-l-[6px] border-blue-500 p-10 rounded-r-[40px] shadow-inner">
+                      <h5 className="font-black text-[10px] uppercase tracking-[0.2em] text-blue-600 mb-6 text-left">Abstract Formulation</h5>
+                      <p className="italic text-slate-700 leading-relaxed font-serif-journal text-lg text-left">"{selectedJournal.journal[selectedJournal.lang].abstract}"</p>
+                    </div>
+                    
+                    <section className="space-y-6">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">I. Introduction</h5>
+                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].introduction}</p>
                     </section>
+                    
+                    <section className="space-y-6">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">II. Research Methodology</h5>
+                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].methodology}</p>
+                    </section>
+                    
+                    <section className="space-y-6">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">III. Empirical Analysis & Results</h5>
+                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].results}</p>
+                    </section>
+                    
+                    <section className="space-y-6">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">IV. Strategic Conclusion</h5>
+                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].conclusion}</p>
+                    </section>
+
+                    {selectedJournal.journal[selectedJournal.lang].references && (
+                      <section className="space-y-8 pt-10 border-b border-slate-100 pb-16">
+                        <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 border-b-2 border-slate-900 pb-4 text-left">References</h5>
+                        <ul className="list-none pl-0 space-y-4 text-sm text-slate-600 font-medium text-left">
+                          {selectedJournal.journal[selectedJournal.lang].references.map((ref, i) => (
+                            <li key={i} className="flex gap-4 p-4 hover:bg-slate-50 rounded-2xl transition-colors">
+                              <span className="text-blue-500 font-black">[{i+1}]</span> 
+                              <span>{ref}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Peer Reviews / Comments */}
+              <div className="w-full lg:w-[400px] flex flex-col bg-slate-50 border-l border-slate-200">
+                <div className="p-6 border-b bg-white flex items-center justify-between">
+                  <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 flex items-center gap-3">
+                    <MessageSquare size={18} className="text-blue-600" /> Peer Reviews
+                  </h5>
+                  <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-3 py-1 rounded-md">
+                    {selectedJournal.journal.comments?.length || 0}
+                  </span>
+                </div>
+
+                {/* Comments List Area */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                  {selectedJournal.journal.comments?.map((comment) => (
+                    <div key={comment.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm animate-in slide-in-from-right-4 transition-all">
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-md bg-slate-900 text-white flex items-center justify-center text-[8px] font-black uppercase">
+                            {comment.userName.charAt(0)}
+                          </div>
+                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-tight">{comment.userName}</span>
+                        </div>
+                        <span className="text-[8px] font-bold text-slate-300">{new Date(comment.timestamp).toLocaleDateString()}</span>
+                      </div>
+                      <p className="text-slate-700 text-xs leading-relaxed text-left">{comment.text}</p>
+                    </div>
+                  ))}
+                  {(!selectedJournal.journal.comments || selectedJournal.journal.comments.length === 0) && (
+                    <div className="py-20 text-center px-6">
+                      <MessageSquare size={32} className="mx-auto text-slate-200 mb-4" />
+                      <p className="text-slate-400 text-xs italic font-medium leading-relaxed">No reviews posted yet. Be the first to provide technical feedback on this research.</p>
+                    </div>
                   )}
                 </div>
+
+                {/* Comment Input Sticky at Bottom */}
+                <div className="p-6 bg-white border-t border-slate-200">
+                  <div className="bg-slate-50 p-1.5 rounded-2xl border border-slate-200 flex items-center gap-2 group focus-within:ring-4 focus-within:ring-blue-500/10 transition-all shadow-inner">
+                    <input 
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handlePostComment(selectedJournal.journal.id);
+                        }
+                      }}
+                      placeholder="Add professional review..." 
+                      className="flex-1 bg-transparent px-4 py-2 outline-none font-medium text-[11px]"
+                    />
+                    <button 
+                      onClick={() => handlePostComment(selectedJournal.journal.id)}
+                      disabled={isPostingComment || !commentText.trim()}
+                      className="p-3 bg-slate-900 text-white rounded-xl hover:bg-blue-600 transition-all disabled:opacity-50 disabled:bg-slate-200 shadow-lg"
+                    >
+                      {isPostingComment ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="p-8 border-t bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
-                <ShieldCheck size={16} className="text-green-500" /> Authorized Publication Access
-              </div>
-              <button onClick={() => createPDF(selectedJournal.journal, selectedJournal.lang).save(`${selectedJournal.journal.topic}.pdf`)} className="w-full sm:w-auto px-12 py-5 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-3 hover:bg-black transition-all shadow-2xl active:scale-95">
-                <Download size={20} /> Export High-Res PDF
-              </button>
+            
+            {/* Modal Footer / Summary Bar */}
+            <div className="p-4 border-t bg-slate-50 flex items-center justify-center gap-2 text-[10px] font-black uppercase text-slate-400">
+              <ShieldCheck size={14} className="text-green-500" /> Authorized Academic Preview Mode
             </div>
           </div>
         </div>
