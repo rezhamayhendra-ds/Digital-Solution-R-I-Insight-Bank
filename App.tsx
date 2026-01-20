@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import { generateJournalContent } from './services/geminiService';
@@ -8,8 +9,8 @@ import {
 } from './types';
 import { 
   LayoutDashboard, PlusCircle, FileText, Download, 
-  Loader2, X, ShieldCheck, Globe, LogOut, Edit3, Save, AlertCircle, PieChart as PieChartIcon, BarChart3, TrendingUp, Calendar, Filter,
-  User as UserIcon, IdCard, Briefcase, MessageSquare, Send
+  Loader2, X, Globe, LogOut, Edit3, Save, AlertCircle, PieChart as PieChartIcon, BarChart3, TrendingUp, Calendar, Filter,
+  User as UserIcon, IdCard, Briefcase, MessageSquare, Send, Eye, ShieldCheck
 } from 'lucide-react';
 
 const AUTHORS: AuthorName[] = [
@@ -40,6 +41,7 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [totalProfiles, setTotalProfiles] = useState<number>(0);
   
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', employeeId: '', department: '' });
@@ -58,6 +60,7 @@ const App: React.FC = () => {
         if (session?.user) {
           await fetchUserProfile(session.user.id, session.user.email!, session.user.user_metadata?.full_name);
         }
+        await fetchTotalUsers();
       } catch (err) {
         console.error("Auth init error:", err);
       } finally {
@@ -71,7 +74,8 @@ const App: React.FC = () => {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         await fetchUserProfile(session.user.id, session.user.email!, session.user.user_metadata?.full_name);
-      } else if (event === 'SIGNED_OUT') {
+        await fetchTotalUsers();
+      } else if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         setCurrentUser(null);
         setJournals([]);
         setActiveTab('dashboard');
@@ -83,6 +87,18 @@ const App: React.FC = () => {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  const fetchTotalUsers = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true });
+      if (error) throw error;
+      setTotalProfiles(count || 0);
+    } catch (err) {
+      console.error("Fetch total users failed:", err);
+    }
+  };
 
   const fetchUserProfile = async (userId: string, email: string, metadataName?: string) => {
     try {
@@ -113,6 +129,48 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error("Profile fetch error:", err);
+    }
+  };
+
+  const incrementReadCount = async (journalId: string) => {
+    try {
+      const journal = journals.find(j => j.id === journalId);
+      if (!journal) return;
+      
+      const nextCount = (journal.read_count || 0) + 1;
+      const { error } = await supabase
+        .from('journals')
+        .update({ read_count: nextCount })
+        .eq('id', journalId);
+
+      if (!error) {
+        setJournals(prev => prev.map(j => 
+          j.id === journalId ? { ...j, read_count: nextCount } : j
+        ));
+      }
+    } catch (err) {
+      console.error("Failed to increment read count", err);
+    }
+  };
+
+  const incrementDownloadCount = async (journalId: string) => {
+    try {
+      const journal = journals.find(j => j.id === journalId);
+      if (!journal) return;
+
+      const nextCount = (journal.download_count || 0) + 1;
+      const { error } = await supabase
+        .from('journals')
+        .update({ download_count: nextCount })
+        .eq('id', journalId);
+
+      if (!error) {
+        setJournals(prev => prev.map(j => 
+          j.id === journalId ? { ...j, download_count: nextCount } : j
+        ));
+      }
+    } catch (err) {
+      console.error("Failed to increment download count", err);
     }
   };
 
@@ -161,16 +219,24 @@ const App: React.FC = () => {
 
   const filteredJournals = useMemo(() => {
     if (dateFilter === 'all') return journals;
+    
     const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    
     return journals.filter(j => {
-      const jDate = new Date(j.createdAt || Date.now());
-      if (dateFilter === 'today') return jDate.toDateString() === now.toDateString();
+      const timestamp = (j as any).created_at || j.createdAt;
+      const jDate = new Date(timestamp).getTime();
+      
+      if (dateFilter === 'today') {
+        return jDate >= today;
+      }
       if (dateFilter === 'week') {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return jDate >= weekAgo;
+        const oneWeekAgo = today - (7 * 24 * 60 * 60 * 1000);
+        return jDate >= oneWeekAgo;
       }
       if (dateFilter === 'month') {
-        return jDate.getMonth() === now.getMonth() && jDate.getFullYear() === now.getFullYear();
+        const oneMonthAgo = today - (30 * 24 * 60 * 60 * 1000);
+        return jDate >= oneMonthAgo;
       }
       return true;
     });
@@ -180,9 +246,14 @@ const App: React.FC = () => {
     login: async (email: string, pass: string) => {
       setAuthError(null);
       setIsLoadingData(true);
-      const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-      if (error) setAuthError(error.message);
-      setIsLoadingData(false);
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+        if (error) setAuthError(error.message);
+      } catch (err: any) {
+        setAuthError(err.message || "Connection failed. Please try again.");
+      } finally {
+        setIsLoadingData(false);
+      }
     },
     register: async (email: string, fullName: string, role: UserRole, employeeId: string, department: string, pass: string, code?: string) => {
       setAuthError(null);
@@ -211,6 +282,7 @@ const App: React.FC = () => {
           if (profileError) throw profileError;
           setAuthError("Registrasi Berhasil! Silakan login.");
           setAuthView('login');
+          await fetchTotalUsers();
         }
       } catch (err: any) {
         setAuthError(err.message);
@@ -219,11 +291,16 @@ const App: React.FC = () => {
       }
     },
     logout: async () => {
-      await supabase.auth.signOut();
-      setCurrentUser(null);
-      setJournals([]);
-      setActiveTab('dashboard');
-      setAuthView('login');
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error("Logout error:", err);
+      } finally {
+        setCurrentUser(null);
+        setJournals([]);
+        setActiveTab('dashboard');
+        setAuthView('login');
+      }
     }
   };
 
@@ -231,7 +308,22 @@ const App: React.FC = () => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     setIsGenerating(true);
-    setGenerationStatus('Consulting Gemini Intelligence...');
+    
+    const statuses = [
+      'Consulting Gemini 3 Pro Engine...',
+      'Accessing Live Google Search Grounding...',
+      'Analyzing 2024-2025 Industry Trends...',
+      'Drafting Bilingual Professional Jounals...',
+      'Synthesizing Citations and References...',
+      'Finalizing Document Structure...'
+    ];
+    
+    let statusIndex = 0;
+    setGenerationStatus(statuses[0]);
+    const statusInterval = setInterval(() => {
+      statusIndex = (statusIndex + 1) % statuses.length;
+      setGenerationStatus(statuses[statusIndex]);
+    }, 8000);
     
     try {
       const content = await generateJournalContent(
@@ -240,6 +332,8 @@ const App: React.FC = () => {
         formData.get('format') as string, 
         formData.get('method') as string
       );
+
+      clearInterval(statusInterval);
 
       if (!content || !content.english) {
         throw new Error("Invalid AI response. Please try again.");
@@ -260,7 +354,9 @@ const App: React.FC = () => {
           english: content.english,
           indonesian: content.indonesian,
           comments: [],
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          read_count: 0,
+          download_count: 0
         }])
         .select().single();
 
@@ -274,6 +370,7 @@ const App: React.FC = () => {
       }, 1000);
 
     } catch (error: any) {
+      clearInterval(statusInterval);
       console.error("Research creation error:", error);
       alert(`Process Failed: ${error.message}`);
       setIsGenerating(false);
@@ -305,7 +402,6 @@ const App: React.FC = () => {
 
       if (error) throw error;
 
-      // Local state update
       const updatedJournals = journals.map(j => 
         j.id === journalId ? { ...j, comments: updatedComments } : j
       );
@@ -327,6 +423,7 @@ const App: React.FC = () => {
   };
 
   const createPDF = (journal: ResearchJournal, lang: 'english' | 'indonesian') => {
+    incrementDownloadCount(journal.id);
     const content: JournalContent = journal[lang];
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     const margin = 20;
@@ -386,7 +483,6 @@ const App: React.FC = () => {
     addSection("III", lang === 'english' ? "RESULTS & ANALYSIS" : "HASIL & ANALISIS", content.results);
     addSection("IV", lang === 'english' ? "CONCLUSION" : "KESIMPULAN", content.conclusion);
 
-    // References Section
     if (content.references && content.references.length > 0) {
       if (yPos > 240) { doc.addPage(); yPos = 20; addHeader(); yPos = 30; }
       doc.setFontSize(14).setFont('helvetica', 'bold').text(lang === 'english' ? "REFERENCES" : "DAFTAR PUSTAKA", margin, yPos);
@@ -413,8 +509,12 @@ const App: React.FC = () => {
     const articles = filteredJournals.filter(j => j.format === 'Article').length;
     const journalsCount = filteredJournals.filter(j => j.format === 'Journal').length;
     
+    const totalReads = filteredJournals.reduce((acc, j) => acc + (j.read_count || 0), 0);
+    const totalDownloads = filteredJournals.reduce((acc, j) => acc + (j.download_count || 0), 0);
+
     return {
       total, business, tech, articles, journalsCount,
+      totalReads, totalDownloads,
       byAuthor: AUTHORS.map(name => ({
         name,
         count: filteredJournals.filter(j => j.author === name).length
@@ -440,8 +540,8 @@ const App: React.FC = () => {
   if (!currentUser) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-900">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
-        <div className="bg-slate-900 p-10 text-center">
-          <ShieldCheck className="mx-auto text-blue-500 mb-4" size={48} />
+        <div className="bg-slate-900 p-10 text-center flex flex-col items-center">
+          <ShieldCheck size={48} className="text-blue-500 mb-4" />
           <h2 className="text-white text-2xl font-bold">R&I Insight Bank</h2>
         </div>
         <div className="p-10">
@@ -485,19 +585,29 @@ const App: React.FC = () => {
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900">
       <aside className="w-72 bg-slate-900 text-white p-6 hidden lg:flex flex-col border-r border-slate-800 fixed h-full z-40">
-        <div className="flex items-center gap-3 mb-10"><ShieldCheck className="text-blue-500" size={32} /><h1 className="text-lg font-bold">Insight Bank</h1></div>
-        <nav className="space-y-2 flex-1">
+        <div className="flex items-center gap-3 mb-10 flex-shrink-0">
+          <ShieldCheck size={32} className="text-blue-500" />
+          <h1 className="text-lg font-bold">Insight Bank</h1>
+        </div>
+        <nav className="space-y-2 flex-1 overflow-y-auto">
           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /> Dashboard</button>
           {currentUser.role === 'DS_TEAM' && <button onClick={() => setActiveTab('new-research')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'new-research' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><PlusCircle size={20} /> Create Research</button>}
           <button onClick={() => setActiveTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'history' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /> Vault</button>
           <button onClick={() => setActiveTab('profile')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'profile' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><UserIcon size={20} /> My Profile</button>
         </nav>
-        <button onClick={() => authService.logout()} className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-all font-bold"><LogOut size={20} /> Logout</button>
+        <div className="mt-auto pt-6 border-t border-slate-800 flex-shrink-0">
+          <button 
+            onClick={() => authService.logout()} 
+            className="w-full flex items-center gap-3 px-4 py-4 rounded-xl text-red-400 hover:bg-red-500/10 transition-all font-bold border border-transparent hover:border-red-500/20 active:scale-95"
+          >
+            <LogOut size={20} /> Logout
+          </button>
+        </div>
       </aside>
 
-      <main className="flex-1 lg:ml-72 min-h-screen">
+      <main className="flex-1 lg:ml-72 min-h-screen relative z-10">
         <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-5 flex justify-between items-center sticky top-0 z-30">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest"><Globe size={14} className="text-blue-600" /> Digital Solution Department - Pancaran Group Inland </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest"><Globe size={14} className="text-blue-600" /> Digital Solution Department - Pancaran Inland Group </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-bold text-slate-900">{currentUser.fullName}</p>
@@ -510,7 +620,6 @@ const App: React.FC = () => {
         <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in">
           {activeTab === 'dashboard' && (
             <div className="space-y-8">
-              {/* Filter Bar */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-2 text-slate-400">
                   <Filter size={16} />
@@ -529,8 +638,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                   <p className="text-slate-400 text-[9px] font-black uppercase mb-1">Total Assets</p>
                   <div className="flex items-end justify-between"><h3 className="text-2xl font-bold">{stats.total}</h3><TrendingUp size={16} className="text-green-500 mb-1" /></div>
@@ -544,26 +652,41 @@ const App: React.FC = () => {
                   <h3 className="text-2xl font-bold text-indigo-600">{stats.tech}</h3>
                 </div>
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                  <p className="text-slate-400 text-[9px] font-black uppercase mb-1">Total Journals</p>
-                  <h3 className="text-2xl font-bold text-blue-600">{stats.journalsCount}</h3>
+                  <p className="text-slate-400 text-[9px] font-black uppercase mb-1">Total Article</p>
+                  <h3 className="text-2xl font-bold text-blue-600">{stats.articles}</h3>
                 </div>
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                  <p className="text-slate-400 text-[9px] font-black uppercase mb-1">My Journals</p>
-                  <h3 className="text-2xl font-bold text-slate-800">{stats.userAssets.journal}</h3>
+                  <p className="text-slate-400 text-[9px] font-black uppercase mb-1">Total Journals</p>
+                  <h3 className="text-2xl font-bold text-slate-800">{stats.journalsCount}</h3>
                 </div>
                 <div className="bg-blue-600 p-5 rounded-2xl shadow-lg text-white">
-                  <p className="text-blue-100 text-[9px] font-black uppercase mb-1">My Articles</p>
-                  <h3 className="text-2xl font-bold">{stats.userAssets.article}</h3>
+                  <p className="text-blue-100 text-[9px] font-black uppercase mb-1">Registered Users</p>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-bold">{totalProfiles}</h3>
+                    <UserIcon size={18} className="opacity-40" />
+                  </div>
+                </div>
+                <div className="bg-emerald-600 p-5 rounded-2xl shadow-lg text-white">
+                  <p className="text-emerald-100 text-[9px] font-black uppercase mb-1">Total Read Access</p>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-bold">{stats.totalReads}</h3>
+                    <Eye size={18} className="opacity-40" />
+                  </div>
+                </div>
+                <div className="bg-rose-600 p-5 rounded-2xl shadow-lg text-white">
+                  <p className="text-rose-100 text-[9px] font-black uppercase mb-1">Total Downloads</p>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-bold">{stats.totalDownloads}</h3>
+                    <Download size={18} className="opacity-40" />
+                  </div>
                 </div>
               </div>
 
-              {/* Charts Section */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                {/* Pie Chart Presisi */}
                 <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-8">
                     <PieChartIcon size={18} className="text-blue-600" />
-                    <h4 className="font-bold text-slate-900">Asset Format Composition</h4>
+                    <h4 className="font-bold text-slate-900 text-left">Asset Format Composition</h4>
                   </div>
                   <div className="flex flex-col md:flex-row items-center justify-around gap-12">
                     <div className="relative w-48 h-48">
@@ -576,6 +699,17 @@ const App: React.FC = () => {
                           fill="none" 
                           strokeDasharray="440" 
                           strokeDashoffset={440 - (440 * journalPercent) / 100}
+                          strokeLinecap="round"
+                          className="transition-all duration-1000 ease-out"
+                        />
+                        <circle 
+                          cx="80" cy="80" r="70" 
+                          stroke="#cbd5e1" 
+                          strokeWidth="18" 
+                          fill="none" 
+                          strokeDasharray="440" 
+                          strokeDashoffset={440 - (440 * articlePercent) / 100}
+                          style={{ transform: `rotate(${(journalPercent / 100) * 360}deg)`, transformOrigin: 'center' }}
                           strokeLinecap="round"
                           className="transition-all duration-1000 ease-out"
                         />
@@ -595,7 +729,7 @@ const App: React.FC = () => {
                       </div>
                       <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                         <div className="flex items-center gap-3">
-                          <div className="w-3 h-3 bg-slate-200 rounded-full"></div>
+                          <div className="w-3 h-3 bg-[#cbd5e1] rounded-full"></div>
                           <span className="text-xs font-bold text-slate-600">Executive Articles</span>
                         </div>
                         <span className="text-xs font-black text-slate-400">{articlePercent.toFixed(1)}%</span>
@@ -604,11 +738,10 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Bar Chart Sumbu & Angka */}
                 <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-8">
                     <BarChart3 size={18} className="text-indigo-600" />
-                    <h4 className="font-bold text-slate-900">Individual Assets Contribution</h4>
+                    <h4 className="font-bold text-slate-900 text-left">Individual Assets Contribution</h4>
                   </div>
                   <div className="relative h-60 flex">
                     <div className="flex flex-col justify-between h-52 text-[9px] font-bold text-slate-400 pr-3 border-r border-slate-100">
@@ -646,7 +779,6 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Enhanced Recent Publications Table */}
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-8 py-5 bg-slate-50/50 border-b border-slate-200 flex justify-between items-center">
                   <div className="flex items-center gap-2">
@@ -669,11 +801,22 @@ const App: React.FC = () => {
                         <tr key={j.id} className="hover:bg-slate-50/50 group transition-all">
                           <td className="px-8 py-5">
                             <p className="font-bold text-slate-900 leading-tight group-hover:text-blue-600 transition-colors text-sm">{j.topic}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 flex items-center gap-2">
-                              Lead: <span className="text-slate-600">{j.author}</span>
-                              <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                              <span>{new Date(j.createdAt || Date.now()).toLocaleDateString()}</span>
-                            </p>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1.5">
+                                  Lead: <span className="text-slate-600">{j.author}</span>
+                                </p>
+                                <span className="w-1 h-1 bg-slate-300 rounded-full hidden sm:block"></span>
+                                <div className="flex items-center gap-3">
+                                  <span className="flex items-center gap-1 text-[10px] font-black text-blue-500">
+                                    <Eye size={12}/> {j.read_count || 0}
+                                  </span>
+                                  <span className="flex items-center gap-1 text-[10px] font-black text-indigo-500">
+                                    <Download size={12}/> {j.download_count || 0}
+                                  </span>
+                                </div>
+                                <span className="w-1 h-1 bg-slate-300 rounded-full hidden sm:block"></span>
+                                <p className="text-[10px] text-slate-400 font-bold">{new Date((j as any).created_at || j.createdAt || Date.now()).toLocaleDateString()}</p>
+                            </div>
                           </td>
                           <td className="px-8 py-5">
                             <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-[9px] font-black border shadow-sm ${j.type === 'Business Forecast' ? 'bg-amber-50 text-amber-700 border-amber-200 ring-2 ring-amber-500/5' : 'bg-indigo-50 text-indigo-700 border-indigo-200 ring-2 ring-indigo-500/5'}`}>
@@ -683,9 +826,9 @@ const App: React.FC = () => {
                           </td>
                           <td className="px-8 py-5 text-right">
                             <div className="flex justify-end items-center gap-1 opacity-40 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => createPDF(j, 'english').save(`${j.topic}_EN.pdf`)} className="px-3 py-1.5 hover:bg-slate-100 rounded-lg text-slate-900 text-[10px] font-black transition-colors">EN</button>
+                              <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'english'}); }} className="px-3 py-1.5 hover:bg-slate-100 rounded-lg text-slate-900 text-[10px] font-black transition-colors">EN</button>
                               <div className="w-[1px] h-4 bg-slate-200 mx-1"></div>
-                              <button onClick={() => createPDF(j, 'indonesian').save(`${j.topic}_ID.pdf`)} className="px-3 py-1.5 hover:bg-slate-100 rounded-lg text-slate-900 text-[10px] font-black transition-colors">ID</button>
+                              <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'indonesian'}); }} className="px-3 py-1.5 hover:bg-slate-100 rounded-lg text-slate-900 text-[10px] font-black transition-colors">ID</button>
                             </div>
                           </td>
                         </tr>
@@ -703,7 +846,7 @@ const App: React.FC = () => {
             <div className="max-w-3xl mx-auto py-10 space-y-10">
               <div className="text-center space-y-2">
                 <h2 className="text-4xl font-bold text-slate-900">Execute Strategic AI Research</h2>
-                <p className="text-slate-400 text-sm font-medium uppercase tracking-widest">Gemini-3 Flash Reasoning Engine Active</p>
+                <p className="text-slate-400 text-sm font-medium uppercase tracking-widest">Gemini-3 Pro Reasoning Engine Active</p>
               </div>
               <form onSubmit={handleCreateResearch} className="bg-white p-12 rounded-[40px] border border-slate-200 shadow-2xl shadow-blue-500/5 space-y-8">
                 <div className="space-y-1">
@@ -748,40 +891,68 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'history' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-8">
-              {filteredJournals.length > 0 ? filteredJournals.map(j => (
-                <div key={j.id} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-full hover:shadow-xl hover:-translate-y-1 transition-all">
-                   <div className="flex justify-between items-start mb-6">
-                    <span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${j.type === 'Business Forecast' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
-                      {j.type}
-                    </span>
-                    <div className="flex items-center gap-2">
-                       {j.comments && j.comments.length > 0 && (
-                        <span className="flex items-center gap-1 text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                          <MessageSquare size={10} /> {j.comments.length}
-                        </span>
-                       )}
-                       <p className="text-[9px] font-black text-slate-300 uppercase">{new Date(j.createdAt || Date.now()).toLocaleDateString()}</p>
+            <div className="space-y-8 animate-in slide-in-from-bottom-8">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6">
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Filter size={16} />
+                  <span className="text-[10px] font-black uppercase">Vault Period Filter</span>
+                </div>
+                <div className="flex bg-slate-100 p-1 rounded-xl">
+                  {['all', 'today', 'week', 'month'].map((f) => (
+                    <button 
+                      key={f}
+                      onClick={() => setDateFilter(f as any)}
+                      className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${dateFilter === f ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {filteredJournals.length > 0 ? filteredJournals.map(j => (
+                  <div key={j.id} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-full hover:shadow-xl hover:-translate-y-1 transition-all">
+                    <div className="flex justify-between items-start mb-6">
+                      <span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${j.type === 'Business Forecast' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
+                        {j.type}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                           <span className="flex items-center gap-1 text-[9px] font-black text-slate-400">
+                             <Eye size={12}/> {j.read_count || 0}
+                           </span>
+                           <span className="flex items-center gap-1 text-[9px] font-black text-slate-400">
+                             <Download size={12}/> {j.download_count || 0}
+                           </span>
+                        </div>
+                        {j.comments && j.comments.length > 0 && (
+                          <span className="flex items-center gap-1 text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                            <MessageSquare size={10} /> {j.comments.length}
+                          </span>
+                        )}
+                        <p className="text-[9px] font-black text-slate-300 uppercase">{new Date((j as any).created_at || j.createdAt || Date.now()).toLocaleDateString()}</p>
+                      </div>
                     </div>
-                   </div>
-                  <h4 className="font-serif-journal text-xl font-bold text-slate-900 mb-4 flex-1 leading-snug">{j.topic}</h4>
-                  <div className="pt-6 border-t border-slate-50 mt-auto">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black">{j.author.charAt(0)}</div>
-                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{j.author}</p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button onClick={() => setSelectedJournal({journal: j, lang: 'english'})} className="flex-1 py-3 bg-slate-900 text-white text-[10px] font-black rounded-xl hover:bg-black transition-colors">READ EN</button>
-                      <button onClick={() => setSelectedJournal({journal: j, lang: 'indonesian'})} className="flex-1 py-3 bg-slate-100 text-slate-700 text-[10px] font-black rounded-xl hover:bg-slate-200 transition-colors">READ ID</button>
+                    <h4 className="font-serif-journal text-xl font-bold text-slate-900 mb-4 flex-1 leading-snug text-left">{j.topic}</h4>
+                    <div className="pt-6 border-t border-slate-50 mt-auto">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black">{(j.author || "A").charAt(0)}</div>
+                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{j.author}</p>
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'english'}); }} className="flex-1 py-3 bg-slate-900 text-white text-[10px] font-black rounded-xl hover:bg-black transition-colors">READ EN</button>
+                        <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'indonesian'}); }} className="flex-1 py-3 bg-slate-100 text-slate-700 text-[10px] font-black rounded-xl hover:bg-slate-200 transition-colors">READ ID</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )) : (
-                <div className="col-span-full py-40 text-center space-y-4">
-                  <FileText size={48} className="mx-auto text-slate-200" />
-                  <p className="text-slate-400 font-medium">The vault is currently empty for this period.</p>
-                </div>
-              )}
+                )) : (
+                  <div className="col-span-full py-40 text-center space-y-4">
+                    <FileText size={48} className="mx-auto text-slate-200" />
+                    <p className="text-slate-400 font-medium">The vault is currently empty for this filter period.</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -799,18 +970,18 @@ const App: React.FC = () => {
                 </div>
                 <div className="p-16 grid grid-cols-1 md:grid-cols-2 gap-12 bg-slate-50/50">
                   <div className="space-y-8">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4">Secure Identity Protocol</h3>
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4 text-left">Secure Identity Protocol</h3>
                     <div className="flex items-center gap-5 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
                       <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500 shadow-inner"><IdCard size={24} /></div>
-                      <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Employee ID</p><p className="font-bold text-slate-900 text-lg">{currentUser.employeeId || 'NOT SET'}</p></div>
+                      <div className="text-left"><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Employee ID</p><p className="font-bold text-slate-900 text-lg">{currentUser.employeeId || 'NOT SET'}</p></div>
                     </div>
                     <div className="flex items-center gap-5 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
                       <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500 shadow-inner"><Briefcase size={24} /></div>
-                      <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Department Unit</p><p className="font-bold text-slate-900 text-lg">{currentUser.department || 'NOT SET'}</p></div>
+                      <div className="text-left"><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Department Unit</p><p className="font-bold text-slate-900 text-lg">{currentUser.department || 'NOT SET'}</p></div>
                     </div>
                   </div>
                   <div className="space-y-8">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4">Activity Insights</h3>
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4 text-left">Activity Insights</h3>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm text-center">
                         <p className="text-[24px] font-black text-slate-900 mb-1">{stats.userAssets.journal + stats.userAssets.article}</p>
@@ -829,7 +1000,6 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Edit Profile Modal */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => !isSavingProfile && setIsEditModalOpen(false)}></div>
@@ -839,9 +1009,9 @@ const App: React.FC = () => {
               {!isSavingProfile && <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2"><X size={24} /></button>}
             </div>
             <form onSubmit={handleUpdateProfile} className="p-10 space-y-6">
-              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Full Name</label><input disabled={isSavingProfile} value={editForm.fullName} onChange={e => setEditForm(p => ({...p, fullName: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
-              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Employee ID</label><input disabled={isSavingProfile} value={editForm.employeeId} onChange={e => setEditForm(p => ({...p, employeeId: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
-              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Department Unit</label><input disabled={isSavingProfile} value={editForm.department} onChange={e => setEditForm(p => ({...p, department: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
+              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Full Name</label><input disabled={isSavingProfile} value={editForm.fullName} onChange={e => setEditForm(p => ({...p, fullName: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
+              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Employee ID</label><input disabled={isSavingProfile} value={editForm.employeeId} onChange={e => setEditForm(p => ({...p, employeeId: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
+              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Department Unit</label><input disabled={isSavingProfile} value={editForm.department} onChange={e => setEditForm(p => ({...p, department: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
               <button type="submit" disabled={isSavingProfile} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-blue-700 transition-all shadow-xl disabled:bg-slate-400 active:scale-95">
                 {isSavingProfile ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} Save Changes
               </button>
@@ -850,14 +1020,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Journal View Modal */}
       {selectedJournal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" onClick={() => setSelectedJournal(null)}></div>
           <div className="relative bg-white w-full max-w-6xl h-[92vh] rounded-[48px] overflow-hidden flex flex-col animate-in zoom-in-95 shadow-2xl">
-            {/* Modal Header */}
             <div className="p-8 border-b flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
-              <div className="flex flex-col">
+              <div className="flex flex-col text-left">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Research Protocol Preview</span>
                 <span className="text-xs font-black text-blue-600 uppercase flex items-center gap-2">
                   <Globe size={12} /> {selectedJournal.lang === 'english' ? 'Global Version (EN)' : 'Local Version (ID)'}
@@ -871,18 +1039,16 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Modal Content - Side-by-Side Layout */}
             <div className="flex-1 flex overflow-hidden">
-              {/* Left Column: Journal Document */}
               <div className="flex-1 overflow-y-auto p-12 lg:p-20 bg-white custom-scrollbar border-r border-slate-100">
                 <div className="max-w-4xl mx-auto space-y-16">
                   <div className="flex justify-between items-start border-b border-slate-100 pb-6">
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-left">Digital Solution R&I Bank - Research Intelligence Unit</p>
-                    <p className="text-[10px] text-slate-400 font-bold text-right">{new Date(selectedJournal.journal.createdAt || Date.now()).toLocaleDateString()}</p>
+                    <p className="text-[10px] text-slate-400 font-bold text-right">{new Date((selectedJournal.journal as any).created_at || selectedJournal.journal.createdAt || Date.now()).toLocaleDateString()}</p>
                   </div>
 
-                  <div className="space-y-6">
-                    <h1 className="text-4xl lg:text-5xl font-serif-journal font-bold text-slate-900 leading-tight text-left">{selectedJournal.journal.topic}</h1>
+                  <div className="space-y-6 text-left">
+                    <h1 className="text-4xl lg:text-5xl font-serif-journal font-bold text-slate-900 leading-tight">{selectedJournal.journal.topic}</h1>
                     <div className="flex flex-wrap items-center gap-4">
                       <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-4 py-2 rounded-full border border-blue-100">
                         {selectedJournal.journal.format}
@@ -897,35 +1063,35 @@ const App: React.FC = () => {
                   </div>
 
                   <div className="space-y-12 prose prose-slate max-w-none text-justify">
-                    <div className="bg-slate-50 border-l-[6px] border-blue-500 p-10 rounded-r-[40px] shadow-inner">
-                      <h5 className="font-black text-[10px] uppercase tracking-[0.2em] text-blue-600 mb-6 text-left">Abstract Formulation</h5>
-                      <p className="italic text-slate-700 leading-relaxed font-serif-journal text-lg text-left">"{selectedJournal.journal[selectedJournal.lang].abstract}"</p>
+                    <div className="bg-slate-50 border-l-[6px] border-blue-500 p-10 rounded-r-[40px] shadow-inner text-left">
+                      <h5 className="font-black text-[10px] uppercase tracking-[0.2em] text-blue-600 mb-6">Abstract Formulation</h5>
+                      <p className="italic text-slate-700 leading-relaxed font-serif-journal text-lg">"{selectedJournal.journal[selectedJournal.lang].abstract}"</p>
                     </div>
                     
-                    <section className="space-y-6">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">I. Introduction</h5>
+                    <section className="space-y-6 text-left">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">I. Introduction</h5>
                       <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].introduction}</p>
                     </section>
                     
-                    <section className="space-y-6">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">II. Research Methodology</h5>
+                    <section className="space-y-6 text-left">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">II. Research Methodology</h5>
                       <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].methodology}</p>
                     </section>
                     
-                    <section className="space-y-6">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">III. Empirical Analysis & Results</h5>
+                    <section className="space-y-6 text-left">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">III. Empirical Analysis & Results</h5>
                       <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].results}</p>
                     </section>
                     
-                    <section className="space-y-6">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4 text-left">IV. Strategic Conclusion</h5>
+                    <section className="space-y-6 text-left">
+                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">IV. Strategic Conclusion</h5>
                       <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].conclusion}</p>
                     </section>
 
                     {selectedJournal.journal[selectedJournal.lang].references && (
-                      <section className="space-y-8 pt-10 border-b border-slate-100 pb-16">
-                        <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 border-b-2 border-slate-900 pb-4 text-left">References</h5>
-                        <ul className="list-none pl-0 space-y-4 text-sm text-slate-600 font-medium text-left">
+                      <section className="space-y-8 pt-10 border-b border-slate-100 pb-16 text-left">
+                        <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 border-b-2 border-slate-900 pb-4">References</h5>
+                        <ul className="list-none pl-0 space-y-4 text-sm text-slate-600 font-medium">
                           {selectedJournal.journal[selectedJournal.lang].references.map((ref, i) => (
                             <li key={i} className="flex gap-4 p-4 hover:bg-slate-50 rounded-2xl transition-colors">
                               <span className="text-blue-500 font-black">[{i+1}]</span> 
@@ -939,7 +1105,6 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Right Column: Peer Reviews / Comments */}
               <div className="w-full lg:w-[400px] flex flex-col bg-slate-50 border-l border-slate-200">
                 <div className="p-6 border-b bg-white flex items-center justify-between">
                   <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 flex items-center gap-3">
@@ -950,31 +1115,29 @@ const App: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Comments List Area */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
                   {selectedJournal.journal.comments?.map((comment) => (
-                    <div key={comment.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm animate-in slide-in-from-right-4 transition-all">
+                    <div key={comment.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm animate-in slide-in-from-right-4 transition-all text-left">
                       <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center gap-2">
                           <div className="w-6 h-6 rounded-md bg-slate-900 text-white flex items-center justify-center text-[8px] font-black uppercase">
-                            {comment.userName.charAt(0)}
+                            {(comment.userName || "U").charAt(0)}
                           </div>
                           <span className="text-[10px] font-black text-blue-600 uppercase tracking-tight">{comment.userName}</span>
                         </div>
                         <span className="text-[8px] font-bold text-slate-300">{new Date(comment.timestamp).toLocaleDateString()}</span>
                       </div>
-                      <p className="text-slate-700 text-xs leading-relaxed text-left">{comment.text}</p>
+                      <p className="text-slate-700 text-xs leading-relaxed">{comment.text}</p>
                     </div>
                   ))}
                   {(!selectedJournal.journal.comments || selectedJournal.journal.comments.length === 0) && (
                     <div className="py-20 text-center px-6">
                       <MessageSquare size={32} className="mx-auto text-slate-200 mb-4" />
-                      <p className="text-slate-400 text-xs italic font-medium leading-relaxed">No reviews posted yet. Be the first to provide technical feedback on this research.</p>
+                      <p className="text-slate-400 text-xs italic font-medium leading-relaxed">No reviews posted yet.</p>
                     </div>
                   )}
                 </div>
 
-                {/* Comment Input Sticky at Bottom */}
                 <div className="p-6 bg-white border-t border-slate-200">
                   <div className="bg-slate-50 p-1.5 rounded-2xl border border-slate-200 flex items-center gap-2 group focus-within:ring-4 focus-within:ring-blue-500/10 transition-all shadow-inner">
                     <input 
@@ -1001,9 +1164,8 @@ const App: React.FC = () => {
               </div>
             </div>
             
-            {/* Modal Footer / Summary Bar */}
             <div className="p-4 border-t bg-slate-50 flex items-center justify-center gap-2 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-green-500" /> Authorized Academic Preview Mode
+              <ShieldCheck size={14} className="text-blue-500 opacity-50" /> Authorized Academic Preview Mode
             </div>
           </div>
         </div>

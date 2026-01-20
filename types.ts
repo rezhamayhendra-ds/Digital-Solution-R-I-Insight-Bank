@@ -1,4 +1,3 @@
-
 export interface JournalContent {
   abstract: string;
   introduction: string;
@@ -16,7 +15,6 @@ export type UserRole = 'INTERNAL' | 'DS_TEAM';
 export interface User {
   id: string;
   email: string;
-  password?: string; // Added for mock auth logic
   fullName: string;
   role: UserRole;
   employeeId?: string;
@@ -48,6 +46,8 @@ export interface ResearchJournal {
   english: JournalContent;
   indonesian: JournalContent;
   comments: Comment[];
+  read_count?: number; // Sinkron dengan kolom DB baru
+  download_count?: number; // Sinkron dengan kolom DB baru
 }
 
 export interface DashboardStats {
