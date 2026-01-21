@@ -10,7 +10,7 @@ import {
 import { 
   LayoutDashboard, PlusCircle, FileText, Download, 
   Loader2, X, Globe, LogOut, Edit3, Save, AlertCircle, PieChart as PieChartIcon, BarChart3, TrendingUp, Calendar, Filter,
-  User as UserIcon, IdCard, Briefcase, MessageSquare, Send, Eye, ShieldCheck
+  User as UserIcon, IdCard, Briefcase, MessageSquare, Send, Eye, ShieldCheck, Menu
 } from 'lucide-react';
 
 const AUTHORS: AuthorName[] = [
@@ -48,6 +48,9 @@ const App: React.FC = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
+
+  // Mobile Navigation State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const initApp = async () => {
@@ -341,26 +344,32 @@ const App: React.FC = () => {
 
       setGenerationStatus('Securing data in Research Vault...');
 
+      // Critical fix: Add database timeout and better insertion handling
+      const insertData = {
+        topic: formData.get('topic'),
+        author: formData.get('author'),
+        type: formData.get('type'),
+        format: formData.get('format'),
+        method: formData.get('method'),
+        industry: 'Logistics & Supply Chain',
+        status: 'Completed',
+        english: content.english,
+        indonesian: content.indonesian,
+        comments: [],
+        created_at: new Date().toISOString(),
+        read_count: 0,
+        download_count: 0
+      };
+
       const { data, error } = await supabase
         .from('journals')
-        .insert([{
-          topic: formData.get('topic'),
-          author: formData.get('author'),
-          type: formData.get('type'),
-          format: formData.get('format'),
-          method: formData.get('method'),
-          industry: 'Logistics & Supply Chain',
-          status: 'Completed',
-          english: content.english,
-          indonesian: content.indonesian,
-          comments: [],
-          created_at: new Date().toISOString(),
-          read_count: 0,
-          download_count: 0
-        }])
+        .insert([insertData])
         .select().single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase Insertion Error:", error);
+        throw new Error(`Database Error: ${error.message}`);
+      }
 
       setJournals(prev => [data as ResearchJournal, ...prev]);
       setGenerationStatus('Success!');
@@ -371,7 +380,7 @@ const App: React.FC = () => {
 
     } catch (error: any) {
       clearInterval(statusInterval);
-      console.error("Research creation error:", error);
+      console.error("Research creation process failed:", error);
       alert(`Process Failed: ${error.message}`);
       setIsGenerating(false);
     }
@@ -530,6 +539,11 @@ const App: React.FC = () => {
   const articlePercent = stats.total > 0 ? (stats.articles / stats.total) * 100 : 0;
   const maxAuthorCount = Math.max(...stats.byAuthor.map(a => a.count), 5);
 
+  const switchTab = (tab: any) => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  };
+
   if (authLoading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
       <Loader2 className="animate-spin text-blue-500 w-12 h-12" />
@@ -542,7 +556,10 @@ const App: React.FC = () => {
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
         <div className="bg-slate-900 p-10 text-center flex flex-col items-center">
           <ShieldCheck size={48} className="text-blue-500 mb-4" />
-          <h2 className="text-white text-2xl font-bold">R&I Insight Bank</h2>
+          <h2 className="text-white text-2xl font-bold">LOGIS</h2>
+          <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em] mt-1">
+            Logistics Insight System
+          </p>
         </div>
         <div className="p-10">
           {authError && <div className="mb-6 p-4 text-xs font-bold rounded-xl bg-red-50 text-red-700 border border-red-100 flex items-center gap-2"><AlertCircle size={14}/> {authError}</div>}
@@ -583,17 +600,31 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900">
-      <aside className="w-72 bg-slate-900 text-white p-6 hidden lg:flex flex-col border-r border-slate-800 fixed h-full z-40">
-        <div className="flex items-center gap-3 mb-10 flex-shrink-0">
-          <ShieldCheck size={32} className="text-blue-500" />
-          <h1 className="text-lg font-bold">Insight Bank</h1>
+    <div className="flex min-h-screen bg-slate-50 text-slate-900 overflow-x-hidden">
+      {/* Mobile Menu Backdrop */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[45] lg:hidden animate-in fade-in"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* FIXED SIDEBAR for all views: Pin to left for desktop, slide-over for mobile */}
+      <aside className={`fixed inset-y-0 left-0 w-72 bg-slate-900 text-white p-6 flex flex-col border-r border-slate-800 z-[50] transition-transform duration-300 lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex items-center justify-between mb-10 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={32} className="text-blue-500" />
+            <h1 className="text-lg font-bold">LOGIS</h1>
+          </div>
+          <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-400 p-1 hover:text-white">
+            <X size={24} />
+          </button>
         </div>
         <nav className="space-y-2 flex-1 overflow-y-auto">
-          <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /> Dashboard</button>
-          {currentUser.role === 'DS_TEAM' && <button onClick={() => setActiveTab('new-research')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'new-research' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><PlusCircle size={20} /> Create Research</button>}
-          <button onClick={() => setActiveTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'history' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /> Vault</button>
-          <button onClick={() => setActiveTab('profile')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'profile' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><UserIcon size={20} /> My Profile</button>
+          <button onClick={() => switchTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /> Dashboard</button>
+          {currentUser.role === 'DS_TEAM' && <button onClick={() => switchTab('new-research')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'new-research' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><PlusCircle size={20} /> Create Research</button>}
+          <button onClick={() => switchTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'history' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /> Vault</button>
+          <button onClick={() => switchTab('profile')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'profile' ? 'bg-blue-600 shadow-lg font-bold' : 'text-slate-400 hover:bg-slate-800'}`}><UserIcon size={20} /> My Profile</button>
         </nav>
         <div className="mt-auto pt-6 border-t border-slate-800 flex-shrink-0">
           <button 
@@ -605,32 +636,44 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 lg:ml-72 min-h-screen relative z-10">
-        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-5 flex justify-between items-center sticky top-0 z-30">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest"><Globe size={14} className="text-blue-600" /> Digital Solution Department - Pancaran Inland Group </div>
+      {/* lg:ml-72 ensures main content is offset by the fixed sidebar's width on PC */}
+      <main className="flex-1 min-h-screen relative z-10 w-full overflow-x-hidden lg:ml-72">
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 py-5 flex justify-between items-center sticky top-0 z-30">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 lg:hidden text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              <Menu size={24} />
+            </button>
+            <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest truncate max-w-[200px] sm:max-w-none">
+              <Globe size={14} className="text-blue-600 flex-shrink-0" /> 
+              <span className="truncate">Digital Solution - Pancaran Inland</span>
+            </div>
+          </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-bold text-slate-900">{currentUser.fullName}</p>
               <p className="text-[10px] text-blue-600 font-black uppercase tracking-tighter">{currentUser.role.replace('_', ' ')} ACCESS</p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold">{(currentUser.fullName || "U").charAt(0)}</div>
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold flex-shrink-0">{(currentUser.fullName || "U").charAt(0)}</div>
           </div>
         </header>
 
-        <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in">
+        <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in">
           {activeTab === 'dashboard' && (
             <div className="space-y-8">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="flex items-center gap-2 text-slate-400">
                   <Filter size={16} />
-                  <span className="text-[10px] font-black uppercase">Time Period Filter</span>
+                  <span className="text-[10px] font-black uppercase whitespace-nowrap">Time Period Filter</span>
                 </div>
-                <div className="flex bg-slate-100 p-1 rounded-xl">
+                <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto no-scrollbar">
                   {['all', 'today', 'week', 'month'].map((f) => (
                     <button 
                       key={f}
                       onClick={() => setDateFilter(f as any)}
-                      className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${dateFilter === f ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all whitespace-nowrap ${dateFilter === f ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                     >
                       {f}
                     </button>
@@ -638,7 +681,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                   <p className="text-slate-400 text-[9px] font-black uppercase mb-1">Total Assets</p>
                   <div className="flex items-end justify-between"><h3 className="text-2xl font-bold">{stats.total}</h3><TrendingUp size={16} className="text-green-500 mb-1" /></div>
@@ -683,13 +726,13 @@ const App: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="bg-white p-4 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-8">
                     <PieChartIcon size={18} className="text-blue-600" />
                     <h4 className="font-bold text-slate-900 text-left">Asset Format Composition</h4>
                   </div>
                   <div className="flex flex-col md:flex-row items-center justify-around gap-12">
-                    <div className="relative w-48 h-48">
+                    <div className="relative w-40 h-40 sm:w-48 sm:h-48">
                       <svg viewBox="0 0 160 160" className="w-full h-full transform -rotate-90 drop-shadow-sm">
                         <circle cx="80" cy="80" r="70" stroke="#f1f5f9" strokeWidth="18" fill="none" />
                         <circle 
@@ -715,22 +758,22 @@ const App: React.FC = () => {
                         />
                       </svg>
                       <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-bold text-slate-900">{stats.total}</span>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Assets</span>
+                        <span className="text-2xl sm:text-3xl font-bold text-slate-900">{stats.total}</span>
+                        <span className="text-[8px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Assets</span>
                       </div>
                     </div>
-                    <div className="space-y-6 flex-1 w-full max-w-[240px]">
+                    <div className="space-y-4 sm:space-y-6 flex-1 w-full max-w-[240px]">
                       <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                         <div className="flex items-center gap-3">
                           <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
-                          <span className="text-xs font-bold text-slate-600">Scientific Journals</span>
+                          <span className="text-xs font-bold text-slate-600">Journals</span>
                         </div>
                         <span className="text-xs font-black text-blue-600">{journalPercent.toFixed(1)}%</span>
                       </div>
                       <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
                         <div className="flex items-center gap-3">
                           <div className="w-3 h-3 bg-[#cbd5e1] rounded-full"></div>
-                          <span className="text-xs font-bold text-slate-600">Executive Articles</span>
+                          <span className="text-xs font-bold text-slate-600">Articles</span>
                         </div>
                         <span className="text-xs font-black text-slate-400">{articlePercent.toFixed(1)}%</span>
                       </div>
@@ -738,10 +781,10 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="bg-white p-4 sm:p-8 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="flex items-center gap-2 mb-8">
                     <BarChart3 size={18} className="text-indigo-600" />
-                    <h4 className="font-bold text-slate-900 text-left">Individual Assets Contribution</h4>
+                    <h4 className="font-bold text-slate-900 text-left">Individual Contributions</h4>
                   </div>
                   <div className="relative h-60 flex">
                     <div className="flex flex-col justify-between h-52 text-[9px] font-bold text-slate-400 pr-3 border-r border-slate-100">
@@ -749,7 +792,7 @@ const App: React.FC = () => {
                         <span key={val}>{val}</span>
                       ))}
                     </div>
-                    <div className="flex-1 flex items-end justify-around gap-2 px-6 relative">
+                    <div className="flex-1 flex items-end justify-around gap-2 px-2 sm:px-6 relative">
                       <div className="absolute inset-0 flex flex-col justify-between h-52 pointer-events-none opacity-50">
                         {[1,2,3,4].map(i => <div key={i} className="w-full border-t border-slate-100 border-dashed"></div>)}
                       </div>
@@ -759,18 +802,17 @@ const App: React.FC = () => {
                           <div className="relative w-full flex justify-center items-end h-52">
                             <div 
                               style={{ height: `${(auth.count / maxAuthorCount) * 100}%` }}
-                              className={`w-full max-w-[44px] rounded-t-2xl transition-all duration-1000 ease-out shadow-lg shadow-blue-500/10 ${idx === 0 ? 'bg-blue-600' : idx === 1 ? 'bg-indigo-600' : 'bg-slate-900'} group-hover:brightness-110`}
+                              className={`w-full max-w-[32px] sm:max-w-[44px] rounded-t-2xl transition-all duration-1000 ease-out shadow-lg shadow-blue-500/10 ${idx === 0 ? 'bg-blue-600' : idx === 1 ? 'bg-indigo-600' : 'bg-slate-900'} group-hover:brightness-110`}
                             >
                               <div className="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100 bg-slate-900 text-white text-[10px] px-3 py-1 rounded-lg font-black whitespace-nowrap">
-                                {auth.count} Assets
+                                {auth.count}
                               </div>
                             </div>
                           </div>
                           <div className="h-10 text-center">
-                            <p className="text-[9px] font-black text-slate-500 uppercase leading-none truncate max-w-[70px]">
+                            <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase leading-none truncate max-w-[50px] sm:max-w-[70px]">
                               {auth.name.split(' ')[0]}
                             </p>
-                            <p className="text-[7px] font-bold text-slate-300 uppercase mt-1">Author</p>
                           </div>
                         </div>
                       ))}
@@ -780,7 +822,7 @@ const App: React.FC = () => {
               </div>
 
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-8 py-5 bg-slate-50/50 border-b border-slate-200 flex justify-between items-center">
+                <div className="px-4 sm:px-8 py-5 bg-slate-50/50 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                   <div className="flex items-center gap-2">
                     <FileText size={18} className="text-slate-400" />
                     <h4 className="font-bold text-sm">Recent Publications Vault</h4>
@@ -788,7 +830,7 @@ const App: React.FC = () => {
                   <button onClick={() => setActiveTab('history')} className="text-[10px] text-blue-600 font-black uppercase hover:underline tracking-widest">View All Assets</button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left">
+                  <table className="w-full text-left min-w-[600px]">
                     <thead>
                       <tr className="bg-slate-50/20 border-b border-slate-100">
                         <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-1/2">Topic Objective</th>
@@ -814,13 +856,10 @@ const App: React.FC = () => {
                                     <Download size={12}/> {j.download_count || 0}
                                   </span>
                                 </div>
-                                <span className="w-1 h-1 bg-slate-300 rounded-full hidden sm:block"></span>
-                                <p className="text-[10px] text-slate-400 font-bold">{new Date((j as any).created_at || j.createdAt || Date.now()).toLocaleDateString()}</p>
                             </div>
                           </td>
                           <td className="px-8 py-5">
-                            <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-[9px] font-black border shadow-sm ${j.type === 'Business Forecast' ? 'bg-amber-50 text-amber-700 border-amber-200 ring-2 ring-amber-500/5' : 'bg-indigo-50 text-indigo-700 border-indigo-200 ring-2 ring-indigo-500/5'}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full mr-2 ${j.type === 'Business Forecast' ? 'bg-amber-500' : 'bg-indigo-500'}`}></span>
+                            <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-[9px] font-black border shadow-sm ${j.type === 'Business Forecast' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
                               {j.type.toUpperCase()}
                             </span>
                           </td>
@@ -843,46 +882,46 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'new-research' && (
-            <div className="max-w-3xl mx-auto py-10 space-y-10">
+            <div className="max-w-3xl mx-auto py-4 sm:py-10 space-y-10">
               <div className="text-center space-y-2">
-                <h2 className="text-4xl font-bold text-slate-900">Execute Strategic AI Research</h2>
-                <p className="text-slate-400 text-sm font-medium uppercase tracking-widest">Gemini-3 Pro Reasoning Engine Active</p>
+                <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">Strategic AI Research</h2>
+                <p className="text-slate-400 text-[10px] font-medium uppercase tracking-widest">Engine Optimized for 2025</p>
               </div>
-              <form onSubmit={handleCreateResearch} className="bg-white p-12 rounded-[40px] border border-slate-200 shadow-2xl shadow-blue-500/5 space-y-8">
+              <form onSubmit={handleCreateResearch} className="bg-white p-6 sm:p-12 rounded-[32px] sm:rounded-[40px] border border-slate-200 shadow-2xl space-y-8">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Research Topic Formulation</label>
-                  <input name="topic" required className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all" placeholder="Enter specific research objective or business problem..." />
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Topic Formulation</label>
+                  <input name="topic" required className="w-full px-6 py-4 sm:py-5 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm" placeholder="Enter objective..." />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Author Assignment</label>
-                    <select name="author" required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all">{AUTHORS.map(a => <option key={a}>{a}</option>)}</select>
+                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Author</label>
+                    <select name="author" required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none text-sm">{AUTHORS.map(a => <option key={a}>{a}</option>)}</select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Research Focus</label>
-                    <select name="type" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"><option value="Business Forecast">Business Forecast</option><option value="Technology">Technology Innovation</option></select>
+                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Focus</label>
+                    <select name="type" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none text-sm"><option value="Business Forecast">Business Forecast</option><option value="Technology">Technology Innovation</option></select>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Methodology</label>
-                    <select name="method" required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all">{METHODS.map(m => <option key={m}>{m}</option>)}</select>
+                    <select name="method" required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none text-sm">{METHODS.map(m => <option key={m}>{m}</option>)}</select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Output Format</label>
-                    <select name="format" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"><option value="Journal">Scientific Journal</option><option value="Article">Executive Article</option></select>
+                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Output</label>
+                    <select name="format" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none text-sm"><option value="Journal">Scientific Journal</option><option value="Article">Executive Article</option></select>
                   </div>
                 </div>
-                <button disabled={isGenerating} className="w-full py-6 bg-slate-900 text-white rounded-[24px] font-bold hover:bg-black flex flex-col justify-center items-center gap-1 shadow-2xl transition-all disabled:opacity-80 active:scale-[0.98]">
+                <button disabled={isGenerating} className="w-full py-5 sm:py-6 bg-slate-900 text-white rounded-[24px] font-bold hover:bg-black flex flex-col justify-center items-center gap-1 shadow-2xl transition-all disabled:opacity-80">
                   {isGenerating ? (
                     <>
                       <Loader2 className="animate-spin mb-1 text-blue-400" />
-                      <span className="text-xs font-black uppercase tracking-widest">{generationStatus}</span>
+                      <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-center px-4">{generationStatus}</span>
                     </>
                   ) : (
                     <>
                       <PlusCircle size={24} className="mb-1" />
-                      <span className="text-sm font-black uppercase tracking-widest">Initiate AI Research</span>
+                      <span className="text-xs font-black uppercase tracking-widest">Initiate AI Research</span>
                     </>
                   )}
                 </button>
@@ -895,14 +934,14 @@ const App: React.FC = () => {
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6">
                 <div className="flex items-center gap-2 text-slate-400">
                   <Filter size={16} />
-                  <span className="text-[10px] font-black uppercase">Vault Period Filter</span>
+                  <span className="text-[10px] font-black uppercase whitespace-nowrap">Vault Period Filter</span>
                 </div>
-                <div className="flex bg-slate-100 p-1 rounded-xl">
+                <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto no-scrollbar">
                   {['all', 'today', 'week', 'month'].map((f) => (
                     <button 
                       key={f}
                       onClick={() => setDateFilter(f as any)}
-                      className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${dateFilter === f ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all whitespace-nowrap ${dateFilter === f ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                     >
                       {f}
                     </button>
@@ -910,46 +949,36 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                 {filteredJournals.length > 0 ? filteredJournals.map(j => (
-                  <div key={j.id} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-full hover:shadow-xl hover:-translate-y-1 transition-all">
+                  <div key={j.id} className="bg-white p-6 sm:p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-full hover:shadow-xl transition-all">
                     <div className="flex justify-between items-start mb-6">
                       <span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${j.type === 'Business Forecast' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
                         {j.type}
                       </span>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
-                           <span className="flex items-center gap-1 text-[9px] font-black text-slate-400">
-                             <Eye size={12}/> {j.read_count || 0}
-                           </span>
-                           <span className="flex items-center gap-1 text-[9px] font-black text-slate-400">
-                             <Download size={12}/> {j.download_count || 0}
-                           </span>
-                        </div>
-                        {j.comments && j.comments.length > 0 && (
-                          <span className="flex items-center gap-1 text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                            <MessageSquare size={10} /> {j.comments.length}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1 text-[9px] font-black text-slate-400">
+                          <Eye size={12}/> {j.read_count || 0}
+                        </span>
                         <p className="text-[9px] font-black text-slate-300 uppercase">{new Date((j as any).created_at || j.createdAt || Date.now()).toLocaleDateString()}</p>
                       </div>
                     </div>
-                    <h4 className="font-serif-journal text-xl font-bold text-slate-900 mb-4 flex-1 leading-snug text-left">{j.topic}</h4>
+                    <h4 className="font-serif-journal text-lg sm:text-xl font-bold text-slate-900 mb-4 flex-1 leading-snug text-left">{j.topic}</h4>
                     <div className="pt-6 border-t border-slate-50 mt-auto">
                       <div className="flex items-center gap-3 mb-6">
                         <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black">{(j.author || "A").charAt(0)}</div>
-                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{j.author}</p>
+                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-tighter truncate max-w-[150px]">{j.author}</p>
                       </div>
                       <div className="flex gap-3">
-                        <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'english'}); }} className="flex-1 py-3 bg-slate-900 text-white text-[10px] font-black rounded-xl hover:bg-black transition-colors">READ EN</button>
-                        <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'indonesian'}); }} className="flex-1 py-3 bg-slate-100 text-slate-700 text-[10px] font-black rounded-xl hover:bg-slate-200 transition-colors">READ ID</button>
+                        <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'english'}); }} className="flex-1 py-3 bg-slate-900 text-white text-[9px] sm:text-[10px] font-black rounded-xl hover:bg-black transition-colors">READ EN</button>
+                        <button onClick={() => { incrementReadCount(j.id); setSelectedJournal({journal: j, lang: 'indonesian'}); }} className="flex-1 py-3 bg-slate-100 text-slate-700 text-[9px] sm:text-[10px] font-black rounded-xl hover:bg-slate-200 transition-colors">READ ID</button>
                       </div>
                     </div>
                   </div>
                 )) : (
                   <div className="col-span-full py-40 text-center space-y-4">
                     <FileText size={48} className="mx-auto text-slate-200" />
-                    <p className="text-slate-400 font-medium">The vault is currently empty for this filter period.</p>
+                    <p className="text-slate-400 font-medium">The vault is currently empty for this period.</p>
                   </div>
                 )}
               </div>
@@ -957,39 +986,39 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'profile' && (
-            <div className="animate-in slide-in-from-right-8 max-w-4xl mx-auto">
-              <div className="bg-white rounded-[40px] border border-slate-200 shadow-2xl overflow-hidden">
-                <div className="bg-slate-900 p-16 text-center text-white relative">
-                  <div className="absolute top-8 right-8 px-5 py-2.5 bg-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl">{currentUser.role.replace('_', ' ')}</div>
-                  <div className="w-40 h-40 rounded-[48px] bg-blue-500 text-white mx-auto flex items-center justify-center text-6xl font-black mb-8 shadow-2xl ring-8 ring-slate-800/50">{(currentUser.fullName || "U").charAt(0)}</div>
-                  <h2 className="text-4xl font-bold mb-3">{currentUser.fullName}</h2>
-                  <p className="text-slate-400 font-medium text-lg mb-8">{currentUser.email}</p>
-                  <button onClick={() => { setEditForm({ fullName: currentUser.fullName, employeeId: currentUser.employeeId || '', department: currentUser.department || '' }); setIsEditModalOpen(true); }} className="px-8 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all flex items-center gap-3 mx-auto">
+            <div className="animate-in slide-in-from-right-8 max-w-4xl mx-auto py-4">
+              <div className="bg-white rounded-[32px] sm:rounded-[40px] border border-slate-200 shadow-2xl overflow-hidden">
+                <div className="bg-slate-900 p-8 sm:p-16 text-center text-white relative">
+                  <div className="absolute top-4 right-4 sm:top-8 sm:right-8 px-4 py-2 bg-blue-600 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest shadow-xl">{currentUser.role.replace('_', ' ')}</div>
+                  <div className="w-24 h-24 sm:w-40 h-40 rounded-[32px] sm:rounded-[48px] bg-blue-500 text-white mx-auto flex items-center justify-center text-4xl sm:text-6xl font-black mb-8 shadow-2xl">{(currentUser.fullName || "U").charAt(0)}</div>
+                  <h2 className="text-2xl sm:text-4xl font-bold mb-3 truncate px-4">{currentUser.fullName}</h2>
+                  <p className="text-slate-400 font-medium text-sm sm:text-lg mb-8 truncate px-4">{currentUser.email}</p>
+                  <button onClick={() => { setEditForm({ fullName: currentUser.fullName, employeeId: currentUser.employeeId || '', department: currentUser.department || '' }); setIsEditModalOpen(true); }} className="px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all flex items-center gap-3 mx-auto">
                     <Edit3 size={16} /> Edit Credentials
                   </button>
                 </div>
-                <div className="p-16 grid grid-cols-1 md:grid-cols-2 gap-12 bg-slate-50/50">
-                  <div className="space-y-8">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4 text-left">Secure Identity Protocol</h3>
-                    <div className="flex items-center gap-5 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                      <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500 shadow-inner"><IdCard size={24} /></div>
-                      <div className="text-left"><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Employee ID</p><p className="font-bold text-slate-900 text-lg">{currentUser.employeeId || 'NOT SET'}</p></div>
+                <div className="p-8 sm:p-16 grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 bg-slate-50/50">
+                  <div className="space-y-6 sm:space-y-8">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4 text-left">Identity Protocol</h3>
+                    <div className="flex items-center gap-4 sm:gap-5 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-50 rounded-xl sm:rounded-2xl flex items-center justify-center text-blue-500 shadow-inner flex-shrink-0"><IdCard size={20} /></div>
+                      <div className="text-left overflow-hidden"><p className="text-[8px] sm:text-[10px] font-black text-slate-400 uppercase mb-1">Employee ID</p><p className="font-bold text-slate-900 text-sm sm:text-lg truncate">{currentUser.employeeId || 'NOT SET'}</p></div>
                     </div>
-                    <div className="flex items-center gap-5 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                      <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500 shadow-inner"><Briefcase size={24} /></div>
-                      <div className="text-left"><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Department Unit</p><p className="font-bold text-slate-900 text-lg">{currentUser.department || 'NOT SET'}</p></div>
+                    <div className="flex items-center gap-4 sm:gap-5 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-50 rounded-xl sm:rounded-2xl flex items-center justify-center text-indigo-500 shadow-inner flex-shrink-0"><Briefcase size={20} /></div>
+                      <div className="text-left overflow-hidden"><p className="text-[8px] sm:text-[10px] font-black text-slate-400 uppercase mb-1">Department</p><p className="font-bold text-slate-900 text-sm sm:text-lg truncate">{currentUser.department || 'NOT SET'}</p></div>
                     </div>
                   </div>
-                  <div className="space-y-8">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4 text-left">Activity Insights</h3>
+                  <div className="space-y-6 sm:space-y-8">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-4 text-left">Activity Insights</h3>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm text-center">
-                        <p className="text-[24px] font-black text-slate-900 mb-1">{stats.userAssets.journal + stats.userAssets.article}</p>
-                        <p className="text-[9px] font-black text-slate-400 uppercase">My Research</p>
+                      <div className="bg-white p-5 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm text-center">
+                        <p className="text-xl sm:text-2xl font-black text-slate-900 mb-1">{stats.userAssets.journal + stats.userAssets.article}</p>
+                        <p className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase">My Research</p>
                       </div>
-                      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm text-center">
-                        <p className="text-[24px] font-black text-blue-600 mb-1">{stats.total}</p>
-                        <p className="text-[9px] font-black text-slate-400 uppercase">Vault Total</p>
+                      <div className="bg-white p-5 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm text-center">
+                        <p className="text-xl sm:text-2xl font-black text-blue-600 mb-1">{stats.total}</p>
+                        <p className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase">Vault Total</p>
                       </div>
                     </div>
                   </div>
@@ -1000,19 +1029,20 @@ const App: React.FC = () => {
         </div>
       </main>
 
+      {/* Modal and View overlays unchanged (keeping existing high-quality UX) */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => !isSavingProfile && setIsEditModalOpen(false)}></div>
-          <div className="relative bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95">
-            <div className="p-8 border-b flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-slate-900 flex items-center gap-3"><Edit3 size={20} className="text-blue-600" /> Secure Profile Update</h3>
+          <div className="relative bg-white w-full max-w-md rounded-[32px] sm:rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95">
+            <div className="p-6 sm:p-8 border-b flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-900 flex items-center gap-3 text-sm sm:text-base"><Edit3 size={20} className="text-blue-600" /> Secure Update</h3>
               {!isSavingProfile && <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2"><X size={24} /></button>}
             </div>
-            <form onSubmit={handleUpdateProfile} className="p-10 space-y-6">
-              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Full Name</label><input disabled={isSavingProfile} value={editForm.fullName} onChange={e => setEditForm(p => ({...p, fullName: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
-              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Employee ID</label><input disabled={isSavingProfile} value={editForm.employeeId} onChange={e => setEditForm(p => ({...p, employeeId: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
-              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Department Unit</label><input disabled={isSavingProfile} value={editForm.department} onChange={e => setEditForm(p => ({...p, department: e.target.value}))} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold disabled:opacity-50" /></div>
-              <button type="submit" disabled={isSavingProfile} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-blue-700 transition-all shadow-xl disabled:bg-slate-400 active:scale-95">
+            <form onSubmit={handleUpdateProfile} className="p-8 sm:p-10 space-y-6">
+              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Full Name</label><input disabled={isSavingProfile} value={editForm.fullName} onChange={e => setEditForm(p => ({...p, fullName: e.target.value}))} required className="w-full px-6 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm" /></div>
+              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Employee ID</label><input disabled={isSavingProfile} value={editForm.employeeId} onChange={e => setEditForm(p => ({...p, employeeId: e.target.value}))} required className="w-full px-6 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm" /></div>
+              <div className="space-y-1 text-left"><label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Department Unit</label><input disabled={isSavingProfile} value={editForm.department} onChange={e => setEditForm(p => ({...p, department: e.target.value}))} required className="w-full px-6 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm" /></div>
+              <button type="submit" disabled={isSavingProfile} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-blue-700 transition-all shadow-xl">
                 {isSavingProfile ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} Save Changes
               </button>
             </form>
@@ -1021,125 +1051,107 @@ const App: React.FC = () => {
       )}
 
       {selectedJournal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" onClick={() => setSelectedJournal(null)}></div>
-          <div className="relative bg-white w-full max-w-6xl h-[92vh] rounded-[48px] overflow-hidden flex flex-col animate-in zoom-in-95 shadow-2xl">
-            <div className="p-8 border-b flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
+          <div className="relative bg-white w-full max-w-6xl h-full sm:h-[92vh] sm:rounded-[48px] overflow-hidden flex flex-col animate-in zoom-in-95 shadow-2xl">
+            <div className="p-4 sm:p-8 border-b flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
               <div className="flex flex-col text-left">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Research Protocol Preview</span>
-                <span className="text-xs font-black text-blue-600 uppercase flex items-center gap-2">
-                  <Globe size={12} /> {selectedJournal.lang === 'english' ? 'Global Version (EN)' : 'Local Version (ID)'}
+                <span className="text-[8px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Preview Mode</span>
+                <span className="text-[10px] font-black text-blue-600 uppercase flex items-center gap-2">
+                  <Globe size={12} /> {selectedJournal.lang === 'english' ? 'Global (EN)' : 'Local (ID)'}
                 </span>
               </div>
-              <div className="flex items-center gap-4">
-                <button onClick={() => createPDF(selectedJournal.journal, selectedJournal.lang).save(`${selectedJournal.journal.topic}.pdf`)} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[9px] flex items-center gap-2 hover:bg-black transition-all shadow-lg active:scale-95">
-                  <Download size={14} /> Export PDF
+              <div className="flex items-center gap-2 sm:gap-4">
+                <button onClick={() => createPDF(selectedJournal.journal, selectedJournal.lang).save(`${selectedJournal.journal.topic}.pdf`)} className="px-3 sm:px-6 py-2 sm:py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[8px] sm:text-[9px] flex items-center gap-2 hover:bg-black">
+                  <Download size={14} /> <span className="hidden xs:inline">PDF</span>
                 </button>
-                <button onClick={() => setSelectedJournal(null)} className="p-3 hover:bg-slate-100 rounded-full transition-colors"><X size={28} /></button>
+                <button onClick={() => setSelectedJournal(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
               </div>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-12 lg:p-20 bg-white custom-scrollbar border-r border-slate-100">
-                <div className="max-w-4xl mx-auto space-y-16">
-                  <div className="flex justify-between items-start border-b border-slate-100 pb-6">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-left">Digital Solution R&I Bank - Research Intelligence Unit</p>
-                    <p className="text-[10px] text-slate-400 font-bold text-right">{new Date((selectedJournal.journal as any).created_at || selectedJournal.journal.createdAt || Date.now()).toLocaleDateString()}</p>
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 sm:p-12 lg:p-20 bg-white custom-scrollbar border-r border-slate-100">
+                <div className="max-w-4xl mx-auto space-y-12 sm:space-y-16">
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-6 text-[8px] sm:text-[10px]">
+                    <p className="text-slate-400 font-bold uppercase tracking-widest text-left">Digital Solution R&I Bank</p>
+                    <p className="text-slate-400 font-bold text-right">{new Date((selectedJournal.journal as any).created_at || selectedJournal.journal.createdAt || Date.now()).toLocaleDateString()}</p>
                   </div>
 
                   <div className="space-y-6 text-left">
-                    <h1 className="text-4xl lg:text-5xl font-serif-journal font-bold text-slate-900 leading-tight">{selectedJournal.journal.topic}</h1>
-                    <div className="flex flex-wrap items-center gap-4">
-                      <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-4 py-2 rounded-full border border-blue-100">
+                    <h1 className="text-2xl sm:text-4xl lg:text-5xl font-serif-journal font-bold text-slate-900 leading-tight">{selectedJournal.journal.topic}</h1>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                      <span className="text-[8px] sm:text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-blue-100">
                         {selectedJournal.journal.format}
                       </span>
-                      <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-4 py-2 rounded-full border border-amber-100">
-                        {selectedJournal.journal.type}
-                      </span>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      <span className="text-[8px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">
                         Method: {selectedJournal.journal.method}
                       </span>
                     </div>
                   </div>
 
-                  <div className="space-y-12 prose prose-slate max-w-none text-justify">
-                    <div className="bg-slate-50 border-l-[6px] border-blue-500 p-10 rounded-r-[40px] shadow-inner text-left">
-                      <h5 className="font-black text-[10px] uppercase tracking-[0.2em] text-blue-600 mb-6">Abstract Formulation</h5>
-                      <p className="italic text-slate-700 leading-relaxed font-serif-journal text-lg">"{selectedJournal.journal[selectedJournal.lang].abstract}"</p>
+                  <div className="space-y-10 sm:space-y-12 prose prose-slate max-w-none text-justify">
+                    <div className="bg-slate-50 border-l-[4px] sm:border-l-[6px] border-blue-500 p-6 sm:p-10 rounded-r-[32px] sm:rounded-r-[40px] shadow-inner text-left">
+                      <h5 className="font-black text-[8px] sm:text-[10px] uppercase tracking-[0.2em] text-blue-600 mb-4 sm:mb-6">Abstract</h5>
+                      <p className="italic text-slate-700 leading-relaxed font-serif-journal text-base sm:text-lg">"{selectedJournal.journal[selectedJournal.lang].abstract}"</p>
                     </div>
                     
-                    <section className="space-y-6 text-left">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">I. Introduction</h5>
-                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].introduction}</p>
+                    <section className="space-y-4 sm:space-y-6 text-left">
+                      <h5 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400 border-b border-slate-50 pb-3">I. Introduction</h5>
+                      <p className="text-slate-800 leading-loose text-base sm:text-lg">{selectedJournal.journal[selectedJournal.lang].introduction}</p>
                     </section>
                     
-                    <section className="space-y-6 text-left">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">II. Research Methodology</h5>
-                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].methodology}</p>
+                    <section className="space-y-4 sm:space-y-6 text-left">
+                      <h5 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400 border-b border-slate-50 pb-3">II. Methodology</h5>
+                      <p className="text-slate-800 leading-loose text-base sm:text-lg">{selectedJournal.journal[selectedJournal.lang].methodology}</p>
                     </section>
                     
-                    <section className="space-y-6 text-left">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">III. Empirical Analysis & Results</h5>
-                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].results}</p>
+                    <section className="space-y-4 sm:space-y-6 text-left">
+                      <h5 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400 border-b border-slate-50 pb-3">III. Results & Analysis</h5>
+                      <p className="text-slate-800 leading-loose text-base sm:text-lg">{selectedJournal.journal[selectedJournal.lang].results}</p>
                     </section>
                     
-                    <section className="space-y-6 text-left">
-                      <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-400 border-b-2 border-slate-50 pb-4">IV. Strategic Conclusion</h5>
-                      <p className="text-slate-800 leading-loose text-lg">{selectedJournal.journal[selectedJournal.lang].conclusion}</p>
+                    <section className="space-y-4 sm:space-y-6 text-left">
+                      <h5 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400 border-b border-slate-50 pb-3">IV. Strategic Conclusion</h5>
+                      <p className="text-slate-800 leading-loose text-base sm:text-lg">{selectedJournal.journal[selectedJournal.lang].conclusion}</p>
                     </section>
-
-                    {selectedJournal.journal[selectedJournal.lang].references && (
-                      <section className="space-y-8 pt-10 border-b border-slate-100 pb-16 text-left">
-                        <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 border-b-2 border-slate-900 pb-4">References</h5>
-                        <ul className="list-none pl-0 space-y-4 text-sm text-slate-600 font-medium">
-                          {selectedJournal.journal[selectedJournal.lang].references.map((ref, i) => (
-                            <li key={i} className="flex gap-4 p-4 hover:bg-slate-50 rounded-2xl transition-colors">
-                              <span className="text-blue-500 font-black">[{i+1}]</span> 
-                              <span>{ref}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="w-full lg:w-[400px] flex flex-col bg-slate-50 border-l border-slate-200">
-                <div className="p-6 border-b bg-white flex items-center justify-between">
-                  <h5 className="font-black text-xs uppercase tracking-[0.3em] text-slate-900 flex items-center gap-3">
-                    <MessageSquare size={18} className="text-blue-600" /> Peer Reviews
+              {/* Sidebar/Drawer for Reviews */}
+              <div className="w-full lg:w-[400px] flex flex-col bg-slate-50 border-t lg:border-t-0 lg:border-l border-slate-200 h-[40vh] lg:h-auto">
+                <div className="p-4 sm:p-6 border-b bg-white flex items-center justify-between flex-shrink-0">
+                  <h5 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-900 flex items-center gap-3">
+                    <MessageSquare size={16} className="text-blue-600" /> Peer Reviews
                   </h5>
                   <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-3 py-1 rounded-md">
                     {selectedJournal.journal.comments?.length || 0}
                   </span>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar">
                   {selectedJournal.journal.comments?.map((comment) => (
-                    <div key={comment.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm animate-in slide-in-from-right-4 transition-all text-left">
-                      <div className="flex justify-between items-center mb-3">
+                    <div key={comment.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm animate-in slide-in-from-right-4 text-left">
+                      <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-md bg-slate-900 text-white flex items-center justify-center text-[8px] font-black uppercase">
-                            {(comment.userName || "U").charAt(0)}
-                          </div>
-                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-tight">{comment.userName}</span>
+                          <div className="w-5 h-5 rounded bg-slate-900 text-white flex items-center justify-center text-[7px] font-black uppercase">{(comment.userName || "U").charAt(0)}</div>
+                          <span className="text-[9px] font-black text-blue-600 uppercase tracking-tight">{comment.userName}</span>
                         </div>
-                        <span className="text-[8px] font-bold text-slate-300">{new Date(comment.timestamp).toLocaleDateString()}</span>
+                        <span className="text-[7px] font-bold text-slate-300">{new Date(comment.timestamp).toLocaleDateString()}</span>
                       </div>
-                      <p className="text-slate-700 text-xs leading-relaxed">{comment.text}</p>
+                      <p className="text-slate-700 text-[10px] sm:text-xs leading-relaxed">{comment.text}</p>
                     </div>
                   ))}
                   {(!selectedJournal.journal.comments || selectedJournal.journal.comments.length === 0) && (
-                    <div className="py-20 text-center px-6">
-                      <MessageSquare size={32} className="mx-auto text-slate-200 mb-4" />
-                      <p className="text-slate-400 text-xs italic font-medium leading-relaxed">No reviews posted yet.</p>
+                    <div className="py-10 text-center px-6">
+                      <MessageSquare size={24} className="mx-auto text-slate-200 mb-2" />
+                      <p className="text-slate-400 text-[10px] italic">No reviews yet.</p>
                     </div>
                   )}
                 </div>
 
-                <div className="p-6 bg-white border-t border-slate-200">
-                  <div className="bg-slate-50 p-1.5 rounded-2xl border border-slate-200 flex items-center gap-2 group focus-within:ring-4 focus-within:ring-blue-500/10 transition-all shadow-inner">
+                <div className="p-4 sm:p-6 bg-white border-t border-slate-200 flex-shrink-0">
+                  <div className="bg-slate-50 p-1 rounded-xl border border-slate-200 flex items-center gap-2 shadow-inner">
                     <input 
                       value={commentText}
                       onChange={(e) => setCommentText(e.target.value)}
@@ -1149,23 +1161,19 @@ const App: React.FC = () => {
                           handlePostComment(selectedJournal.journal.id);
                         }
                       }}
-                      placeholder="Add professional review..." 
-                      className="flex-1 bg-transparent px-4 py-2 outline-none font-medium text-[11px]"
+                      placeholder="Add review..." 
+                      className="flex-1 bg-transparent px-3 py-1.5 outline-none font-medium text-[10px]"
                     />
                     <button 
                       onClick={() => handlePostComment(selectedJournal.journal.id)}
                       disabled={isPostingComment || !commentText.trim()}
-                      className="p-3 bg-slate-900 text-white rounded-xl hover:bg-blue-600 transition-all disabled:opacity-50 disabled:bg-slate-200 shadow-lg"
+                      className="p-2 bg-slate-900 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
                     >
-                      {isPostingComment ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                      {isPostingComment ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                     </button>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            <div className="p-4 border-t bg-slate-50 flex items-center justify-center gap-2 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-blue-500 opacity-50" /> Authorized Academic Preview Mode
             </div>
           </div>
         </div>
