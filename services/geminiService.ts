@@ -11,7 +11,7 @@ export const generateJournalContent = async (
   const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: "gemini-1.5-flash",
     contents: `Conduct a high-quality professional ${type} research paper in the form of a ${format} using the ${method} methodology on the following topic: "${topic}". 
                The industry context is Logistics & Supply Chain.
                Provide the response in two complete versions: English and Indonesian.
