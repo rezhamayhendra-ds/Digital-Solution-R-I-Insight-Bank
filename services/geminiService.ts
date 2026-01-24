@@ -8,7 +8,7 @@ export const generateJournalContent = async (
   method: string
 ) => {
   // Always use {apiKey: process.env.API_KEY} for initialization
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
